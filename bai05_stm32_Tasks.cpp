@@ -76,36 +76,48 @@ static void MX_GPIO_Init(void)
 
 void HTN_B05_LedPB05(void * argument)
 {
-  for(int i=0;i<3;i++)
+	static uint16_t count_PB05 = 0;
+  for(;;)
   {
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_5);
     vTaskDelay(pdMS_TO_TICKS(500));
+		count_PB05 ++;
+		if(count_PB05 > 4){
+			count_PB05 = 0;
+			xTaskCreate(	HTN_B05_LedPB06,"Led PB06",128, NULL, tskIDLE_PRIORITY + 1, NULL);
+			vTaskDelete(NULL);
+		}
   }
-	xTaskCreate(	HTN_B05_LedPB06,"Led PB06",128, NULL,
-								tskIDLE_PRIORITY + 1, NULL);
-	vTaskDelete(NULL);
 }
 void HTN_B05_LedPB06(void * argument)
 {
-  for(int i=0;i<3;i++)
+	static uint16_t count_PB06 = 0;
+  for(;;)
   {
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_6);
     vTaskDelay(pdMS_TO_TICKS(500));
+		count_PB06 ++;
+		if(count_PB06 > 4){
+			count_PB06 = 0;
+			xTaskCreate(	HTN_B05_LedPB07,"Led PB07",128, NULL, tskIDLE_PRIORITY + 1, NULL);
+			vTaskDelete(NULL);
+		}
   }
-	xTaskCreate(	HTN_B05_LedPB07,"Led PB07",128, NULL,
-							tskIDLE_PRIORITY + 1, NULL);
-	vTaskDelete(NULL);
 }
 void HTN_B05_LedPB07(void * argument)
 {
-  for(int i=0;i<3;i++)
+	static uint16_t count_PB07 = 0;
+  for(;;)
   {
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
     vTaskDelay(pdMS_TO_TICKS(500));
+		count_PB07 ++;
+		if(count_PB07 > 4){
+			count_PB07 = 0;
+			xTaskCreate(	HTN_B05_LedPB05,"Led PB05",128, NULL, tskIDLE_PRIORITY + 1, NULL);
+			vTaskDelete(NULL);
+	}
   }
-	xTaskCreate(	HTN_B05_LedPB05,"Led PB05",128, NULL,
-								tskIDLE_PRIORITY + 1, NULL);
-	vTaskDelete(NULL);
 }
 void HTN_B05_LedPC13(void * argument)
 {
