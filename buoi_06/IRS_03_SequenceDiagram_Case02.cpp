@@ -162,7 +162,12 @@ void HTN_B06_LedPC13(void * arg){
 		{
 			HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 			vTaskDelay(pdMS_TO_TICKS(550));
-			debug_notify_value = ulTaskNotifyTake(pdTRUE, 0); // not block
+			
+			/* Sinh vien thay check 3 cau lenh de kiem tra su khac biet*/
+			
+//			/* Lenh 1 */ debug_notify_value = ulTaskNotifyTake(pdTRUE, 0);
+			/* Lenh 2 */ debug_notify_value = ulTaskNotifyTake(pdFALSE, 0);
+//			/* Lenh 3 */ xTaskNotifyWait(0x00, 0x00, &debug_notify_value, 0);
 		}
 }
 void HTN_B06_I2C1LCD(void * arg){
@@ -205,7 +210,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		{
 			MS_time = 1100 - MS_time;
 			last_tick = now;
-			vTaskNotifyGiveFromISR(HTN_B06_PC13_taskhandle,&xHigherPriorityTaskWoken);
+			
+			/* Sinh vien thay check 3 cau lenh de kiem tra su khac biet*/
+			
+//			/* Lenh 1 */	vTaskNotifyGiveFromISR(HTN_B06_PC13_taskhandle,&xHigherPriorityTaskWoken); /* Lenh 1 */
+//			/* Lenh 2 */ xTaskNotifyFromISR(HTN_B06_PC13_taskhandle, 0, eIncrement, &xHigherPriorityTaskWoken); 
+			/* Lenh 3 */ xTaskNotifyFromISR(HTN_B06_PC13_taskhandle, 0x07, eSetBits, &xHigherPriorityTaskWoken);
 			portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 		}
 	}
