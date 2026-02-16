@@ -29,12 +29,10 @@ static void MX_I2C1_Init(void);
 void Check_LCD_address(I2C_HandleTypeDef *, const uint8_t, int, int);
 
 void HTN_B06_LedPB05(void * arg);
-
 void HTN_B06_LedPC13(void * arg);
 void HTN_B06_I2C1LCD(void * arg);
 
-int main(void)
-{
+int main(void){
   HAL_Init();
   SystemClock_Config();
   MX_GPIO_Init();
@@ -52,8 +50,7 @@ int main(void)
   osKernelStart();
 }
 
-void SystemClock_Config(void)
-{
+void SystemClock_Config(void){
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
@@ -84,8 +81,7 @@ void SystemClock_Config(void)
   }
 }
 
-static void MX_I2C1_Init(void)
-{
+static void MX_I2C1_Init(void){
   hi2c1.Instance = I2C1;
   hi2c1.Init.ClockSpeed = 100000;
   hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
@@ -100,8 +96,7 @@ static void MX_I2C1_Init(void)
     Error_Handler();
   }
 }
-void Check_LCD_address(I2C_HandleTypeDef *hi2c_n, const uint8_t addr, int trails, int timeout)
-{
+void Check_LCD_address(I2C_HandleTypeDef *hi2c_n, const uint8_t addr, int trails, int timeout){
 	if(HAL_I2C_IsDeviceReady(hi2c_n, addr, trails, timeout) == HAL_OK)
 	{
 		for (int i = 0; i<7; i ++) // check whether I2C address is correct?
@@ -121,8 +116,7 @@ void Check_LCD_address(I2C_HandleTypeDef *hi2c_n, const uint8_t addr, int trails
 		}
 	}
 }
-static void MX_GPIO_Init(void)
-{
+static void MX_GPIO_Init(void){
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -165,14 +159,12 @@ void HTN_B06_LedPB05(void * arg){
 void HTN_B06_LedPC13(void * arg){
 	for(;;)
 	{
-		// wait button and return notify value before reset it to 0
-		debug_notify_value = ulTaskNotifyTake(pdTRUE, portMAX_DELAY); 
-		task_PC13_run = !task_PC13_run; // flip running flag
-
+		debug_notify_value = ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // block task
+		task_PC13_run = 1;
 		while(task_PC13_run)
 		{
 			HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-			vTaskDelay(pdMS_TO_TICKS(300));
+			vTaskDelay(pdMS_TO_TICKS(550));
 
 			if(ulTaskNotifyTake(pdTRUE, 0))
 				task_PC13_run = 0;
@@ -204,13 +196,11 @@ void HTN_B06_I2C1LCD(void * arg){
 	}
 }
 
-void EXTI15_10_IRQHandler(void)
-{
+void EXTI15_10_IRQHandler(void){
    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{		
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){		
 	static uint32_t last_tick = 0;
 	uint32_t now = xTaskGetTickCountFromISR();
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -226,8 +216,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		}
 	}
 }
-void Error_Handler(void)
-{
+void Error_Handler(void){
   __disable_irq();
   while (1)
   {
