@@ -15,6 +15,7 @@ uint16_t MS_time = 1000;
 uint32_t debug_notify_value;
 uint16_t task_PC13_run = 0;
 char txt[16];
+uint16_t testWoken = 2;
 
 I2C_HandleTypeDef hi2c1;
 CLCD_I2C_Name LCD1;
@@ -166,8 +167,8 @@ void HTN_B06_LedPC13(void * arg){
 			/* Sinh vien thay check 3 cau lenh de kiem tra su khac biet*/
 			
 //			/* Lenh 1 */ debug_notify_value = ulTaskNotifyTake(pdTRUE, 0);
-			/* Lenh 2 */ debug_notify_value = ulTaskNotifyTake(pdFALSE, 0);
-//			/* Lenh 3 */ xTaskNotifyWait(0x00, 0x00, &debug_notify_value, 0);
+//			/* Lenh 2 */ debug_notify_value = ulTaskNotifyTake(pdFALSE, 0);
+			/* Lenh 3 */ xTaskNotifyWait(0x00, 0x00, &debug_notify_value, 0);
 		}
 }
 void HTN_B06_I2C1LCD(void * arg){
@@ -190,7 +191,11 @@ void HTN_B06_I2C1LCD(void * arg){
 		CLCD_I2C_SetCursor(&LCD1, 12,1);
 		sprintf(txt,"%u",debug_notify_value);
 		CLCD_I2C_WriteString(&LCD1, txt);
-
+		
+		CLCD_I2C_SetCursor(&LCD1, 15,1);
+		sprintf(txt,"%u",testWoken);
+		CLCD_I2C_WriteString(&LCD1, txt);
+		
 		vTaskDelay(pdMS_TO_TICKS(500));
 	}
 }
@@ -211,11 +216,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			MS_time = 1100 - MS_time;
 			last_tick = now;
 			
-			/* Sinh vien thay check 3 cau lenh de kiem tra su khac biet*/
+			/* Sinh vien thay check 4 cau lenh de kiem tra su khac biet*/
 			
-//			/* Lenh 1 */	vTaskNotifyGiveFromISR(HTN_B06_PC13_taskhandle,&xHigherPriorityTaskWoken); /* Lenh 1 */
+			/* Lenh 1 */	vTaskNotifyGiveFromISR(HTN_B06_PC13_taskhandle,&xHigherPriorityTaskWoken); /* Lenh 1 */
 //			/* Lenh 2 */ xTaskNotifyFromISR(HTN_B06_PC13_taskhandle, 0, eIncrement, &xHigherPriorityTaskWoken); 
-			/* Lenh 3 */ xTaskNotifyFromISR(HTN_B06_PC13_taskhandle, 0x07, eSetBits, &xHigherPriorityTaskWoken);
+//			/* Lenh 3 */ xTaskNotifyFromISR(HTN_B06_PC13_taskhandle, 10, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+//			/* Lenh 4 */ xTaskNotifyFromISR(HTN_B06_PC13_taskhandle, 0x07, eSetBits, &xHigherPriorityTaskWoken);
+			testWoken = 2;			
+			if(xHigherPriorityTaskWoken == pdTRUE)
+				testWoken = 1;
+			else if(xHigherPriorityTaskWoken == pdFALSE)
+				testWoken = 0;
 			portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 		}
 	}
