@@ -1,6 +1,7 @@
 ## Vẽ Sequence Diagram trên sequencediagram.org
 * Bước 1: Mở trang web https://sequencediagram.org/
-participant ISRbutton
+
+```participant ISRbutton
 participant Kernel
 participant Scheduler
 participant HighPtask
@@ -31,4 +32,4 @@ deactivate LowPtask
 Scheduler->HighPtask: Context switch
 activate HighPtask
 HighPtask->HighPtask: ulTaskNotifyTake()\nModify notification value
-<img width="1166" height="953" alt="image" src="https://github.com/user-attachments/assets/48284792-19e1-4faa-b7de-b0887411c418" />
+```
