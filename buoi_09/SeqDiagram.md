@@ -1,5 +1,5 @@
-
-
+## Vẽ Sequence Diagram trên sequencediagram.org
+* Bước 1: Mở trang web https://sequencediagram.org/
 participant ISRbutton
 participant Kernel
 participant Scheduler
