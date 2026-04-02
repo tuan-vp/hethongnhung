@@ -44,7 +44,6 @@ int main(void){
 	
 	scoreMutex = xSemaphoreCreateMutex();
 	time_handle = xTimerCreate("Timer", pdMS_TO_TICKS(2000),pdTRUE, NULL, timer_callback);
-	xTimerStart(time_handle,0);
 	
 	xTaskCreate(lcd_task, "LCD task", 128, NULL, 2, &lcd_handle);
 	xTaskCreate(quizz_task, "LCD task", 128, NULL, 3, &quizz_handle);	
@@ -67,25 +66,34 @@ void button_task(void * params){
 			if(xQueueReceive(quizz_queue, &item, 0) == pdTRUE){
 				if(notifyValue & (1<<item.ans)){
 					mygame.score ++;
-					mygame.status = PLAYING;
 				}else{
 					mygame.status = END;
 				}
-				mygame.ans = ANSWER;
+				xTimerReset(time_handle, 0);
 			}
 		}else if(mygame.status == START){
 			srand(HAL_GetTick());
 			mygame.status = PLAYING;
+			xTimerReset(time_handle, 0);
 		}else if(mygame.status == END){
 			mygame.score = 0;
 			mygame.ans = ANSWER;
 			mygame.status = START;
 		}
 		xSemaphoreGive(scoreMutex);
+		xTaskNotify(lcd_handle,1<<0,eSetBits);
 	}
 }
 void timer_callback(TimerHandle_t xTimer){
-	xTaskNotify(lcd_handle, 1<<0, eSetBits);
+	BaseType_t xHPTW = pdFALSE;
+	xSemaphoreTakeFromISR(scoreMutex, &xHPTW);
+	if(mygame.ans == ANSWER && mygame.status == PLAYING){
+		mygame.ans = NOANSWER;
+		mygame.status = END;
+		xTaskNotify(lcd_handle,1<<0,eSetBits);
+	}
+	xSemaphoreGiveFromISR(scoreMutex, &xHPTW);
+	portYIELD_FROM_ISR(xHPTW);
 }
 uint16_t minus(uint16_t x, uint16_t y){
 	// max(0,x-y)
@@ -146,17 +154,10 @@ void lcd_task(void* params){
 	game_status status_copy;
 	ans_status ans_copy;
 	for(;;){
-		xTaskNotifyWait(0,0xFFFFFFFF,&notifyValue, portMAX_DELAY);
 		xSemaphoreTake(scoreMutex, portMAX_DELAY);
 		score_copy = mygame.score;
-		ans_copy  = mygame.ans;
-		if(ans_copy != ANSWER){
-			mygame.status = END;
-			status_copy = END;
-		}
 		status_copy = mygame.status;
 		xSemaphoreGive(scoreMutex);
-		
 		if(status_copy == PLAYING){
 			if(xQueuePeek(quizz_queue, &item, 0) == pdTRUE){
 				CLCD_I2C_Clear(&LCD1);
@@ -166,16 +167,13 @@ void lcd_task(void* params){
 				CLCD_I2C_SetCursor(&LCD1,0,1);
 				sprintf(lcd_text,"%3d|  %2d %2d %2d",score_copy,item.kq1,item.kq2,item.kq3);
 				CLCD_I2C_WriteString(&LCD1,lcd_text);
-				xSemaphoreTake(scoreMutex, portMAX_DELAY);
-				mygame.ans = NOANSWER;
-				xSemaphoreGive(scoreMutex);
 			}
 		}else if(status_copy == END){
 			CLCD_I2C_Clear(&LCD1);
 			CLCD_I2C_SetCursor(&LCD1,0,0);
-			CLCD_I2C_WriteString(&LCD1,"YOU LOST | PLAY");
+			CLCD_I2C_WriteString(&LCD1,"YOU LOST| PLAY");
 			CLCD_I2C_SetCursor(&LCD1,0,1);
-			sprintf(lcd_text,          "SCORE: %2d| AGAIN",score_copy);
+			sprintf(lcd_text,          "SCORE:%2d| AGAIN",score_copy);
 			CLCD_I2C_WriteString(&LCD1,lcd_text);
 		}else if(status_copy == START){
 			CLCD_I2C_Clear(&LCD1);
@@ -184,6 +182,7 @@ void lcd_task(void* params){
 			CLCD_I2C_SetCursor(&LCD1,0,1);
 			CLCD_I2C_WriteString(&LCD1,"TO START");
 		}
+		xTaskNotifyWait(0,0xFFFFFFFF,&notifyValue,portMAX_DELAY);
 	}
 }
 void led_task(void * params){
