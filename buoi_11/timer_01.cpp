@@ -152,7 +152,6 @@ void lcd_task(void* params){
 	quizz_item item;
 	uint8_t score_copy;
 	game_status status_copy;
-	ans_status ans_copy;
 	for(;;){
 		xSemaphoreTake(scoreMutex, portMAX_DELAY);
 		score_copy = mygame.score;
