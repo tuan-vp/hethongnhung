@@ -15,35 +15,42 @@ in cmsis_os.h > FreeRTOS.h > FreeRTOSConfig.h
 
 typedef enum {START, WAITING, PLAYING, NEXTGAME, FINISH, END} gameSTATE;
 typedef struct {uint32_t level, score; gameSTATE state;} playerSTATE;
+typedef enum {TO_LEFT, TO_RIGHT} direction;
+typedef struct{BaseType_t need_Clear; uint32_t index;} colCLEAR;
 
-uint8_t Tlane[13] = {
-	NULL_MCAR,NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL,
-	NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL
-};
-uint8_t Blane[13] = {
-	NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL,
-	NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL, NULL_NULL
-};
+uint8_t allLane[4][13] = {{0,0,0,0,0,0,0,0,0,0,0,0,0},
+													{3,0,0,0,0,0,0,0,0,0,0,0,0},
+													{0,0,0,0,0,0,0,0,0,0,0,0,0},
+													{0,0,0,0,0,0,0,0,0,0,0,0,0}};
 
+uint8_t Tlane[13] = { __u,_n_,_n_,_n_,_n_,_n_,_n_,
+											_n_,_n_,_n_,_n_,_n_,_n_};
+uint8_t Blane[13] = { _n_,_n_,_n_,_n_,_n_,_n_,_n_,
+											_n_,_n_,_n_,_n_,_n_,_n_};
 I2C_HandleTypeDef hi2c1;
 CLCD_I2C_Name LCD1;
 char lcd_text[20];
 playerSTATE mygame = {0, 0, PLAYING};
+uint32_t bottom_block = 13;
+colCLEAR isclear;
 
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 void SystemClock_Config(void);
 void task_lcd(void * params);
 void task_button(void * params);
+void task_bullet(void *params);
 void task_quiz(void * params);
+void timer_bult_callback(TimerHandle_t xTimer);
 void timer_quiz_callback(TimerHandle_t xTimer);
 void timer_PC13_callback(TimerHandle_t xTimer);
+void timer_PB05_callback(TimerHandle_t xTimer);
 void check_LCD_address(I2C_HandleTypeDef *hi2c, const uint8_t addr, int trails, int timeout);
 
-TaskHandle_t       button_handle, quiz_handle, lcd_handle;
-TimerHandle_t      pc13_timer_hd, button_timer_hd, quiz_timer_hd;
+TaskHandle_t       button_handle,bullet_handle,  quiz_handle, lcd_handle;
+TimerHandle_t      pc13_timer_hd, button_timer_hd, quiz_timer_hd, bult_timer_hd;
 QueueHandle_t      qbutton_hd;
-SemaphoreHandle_t  myMutex, stateMutex, taskQuiz_sem, taskLCD_sem;
+SemaphoreHandle_t  myMutex, bottom_block_Mutex, stateMutex, taskBult_sem, taskQuiz_sem, taskLCD_sem;
 
 int main(void){
   HAL_Init(); 
@@ -54,22 +61,29 @@ int main(void){
 	check_LCD_address(&hi2c1, 0x4E, 3, 100);
 	CLCD_I2C_Init(&LCD1, &hi2c1, 0x4E, 16, 2);
 	
+	bottom_block_Mutex = xSemaphoreCreateMutex(); 
 	myMutex = xSemaphoreCreateMutex();
 	stateMutex = xSemaphoreCreateMutex();
+	taskBult_sem = xSemaphoreCreateCounting(10,0);
 	taskQuiz_sem = xSemaphoreCreateCounting(10,0);
 	taskLCD_sem = xSemaphoreCreateBinary();
 	
+	bult_timer_hd = xTimerCreate("Bullet timer",
+									pdMS_TO_TICKS(150),pdTRUE, 
+									NULL, timer_bult_callback);
 	quiz_timer_hd = xTimerCreate("quizz timer", 
-									pdMS_TO_TICKS(1000),pdTRUE, 
+									pdMS_TO_TICKS(2000),pdTRUE, 
 									NULL, timer_quiz_callback);
 	pc13_timer_hd = xTimerCreate("PC13 Timer", 
 									pdMS_TO_TICKS(500),pdTRUE, 
 									NULL, timer_PC13_callback);
+	xTimerStart(bult_timer_hd, 0);
 	xTimerStart(quiz_timer_hd, 0);
 	xTimerStart(pc13_timer_hd, 0);
 	
 	xTaskCreate(task_lcd, "LCD task",       128, NULL, 2, &lcd_handle);
-	xTaskCreate(task_button, "Button task", 128, NULL, 2, &button_handle);
+	xTaskCreate(task_button, "Button task", 64, NULL, 2, &button_handle);
+	xTaskCreate(task_bullet, "Bullet task", 128, NULL, 2, &bullet_handle);
 	xTaskCreate(task_quiz, "task Quiz", 128, NULL, 2, &quiz_handle);
 	
 	qbutton_hd = xQueueCreate(10,sizeof(uint32_t));
@@ -109,92 +123,155 @@ uint32_t set_level(uint32_t _score){
 void timer_PC13_callback(TimerHandle_t xTimer){
 	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 }
-
+void timer_PB05_callback(TimerHandle_t xTimer){
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_5);
+}
+void timer_bult_callback(TimerHandle_t xTimer){
+	xSemaphoreGive(taskBult_sem);
+}
 void timer_quiz_callback(TimerHandle_t xTimer){
 	xSemaphoreGive(taskQuiz_sem);
 }
+void gamemap_translator(){
+	// take mutex allLane
+	for(int i=1;i<13;i++){
+		switch(allLane[0][i]){
+			case 0: 
+				switch(allLane[1][i]){
+					case 0: Tlane[i] = _n_; break;
+					case 1: Tlane[i] = __b; break;
+					case 2: Tlane[i] = __o; break;
+				}
+				break;
+			case 1:
+				switch(allLane[1][i]){
+					case 0: Tlane[i] = b__; break;
+					case 2: Tlane[i] = b_o; break;
+				}
+				break;
+			case 2: 
+				switch(allLane[1][i]){
+					case 0: Tlane[i] = o__; break;
+					case 1: Tlane[i] = o_b; break;
+					case 2: Tlane[i] = o_o; break;
+				}
+				break;
+		}
+	}
+	for(int i=1;i<13;i++){
+		switch(allLane[2][i]){
+			case 0: 
+				switch(allLane[3][i]){
+					case 0: Blane[i] = _n_; break;
+					case 1: Blane[i] = __b; break;
+					case 2: Blane[i] = __o; break;
+				}
+				break;
+			case 1:
+				switch(allLane[3][i]){
+					case 0: Blane[i] = b__; break;
+					case 1: break;
+					case 2: Blane[i] = b_o; break;
+				}
+				break;
+			case 2: 
+				switch(allLane[3][i]){
+					case 0: Blane[i] = o__; break;
+					case 1: Blane[i] = o_b; break;
+					case 2: Blane[i] = o_o; break;
+				}
+				break;
+		}
+	}
+	// give mutex allLane
+}
+void task_bullet(void *params){
+	BaseType_t need_CLEAR = pdFALSE;
+	uint32_t   clear_cols = 0;
+	for(;;){
+		xSemaphoreTake(taskBult_sem, portMAX_DELAY);
+		xSemaphoreTake(stateMutex, portMAX_DELAY);
+		xSemaphoreTake(myMutex, portMAX_DELAY);
+		xSemaphoreTake(bottom_block_Mutex, portMAX_DELAY);
+		// Clear cols determined at previous iteration
+		uint8_t offset = 1;
+		for(int j = 12; j > 0; j--){
+			if(  allLane[0][j] == 2 && allLane[1][j] == 2 
+				 &&allLane[2][j] == 2 && allLane[3][j] == 2){
+				for(int i=0; i<4; i++){
+					for(int k=j;k>0;k--){
+						allLane[i][k] = allLane[i][k-1];
+					}
+				}
+			}
+		}
+		// update bullet for Top Lane
+		for(int i=0;i<4;i++){
+			for(int j=12;j>1;j--){
+				switch(allLane[i][j-1]){
+					case 0: break;
+					case 1:
+						switch(allLane[i][j]){
+							case 0: case 1: allLane[i][j-1] = 0; allLane[i][j] = 1; break;
+							case 2: allLane[i][j-1] = 2; allLane[i][j] = 2; break;
+						}
+						break;
+					case 2: break;
+				}
+			}
+		}
+		gamemap_translator();
+		xSemaphoreGive(bottom_block_Mutex);
+		xSemaphoreGive(myMutex);
+		xSemaphoreGive(stateMutex);
+		xSemaphoreGive(taskLCD_sem);
+	}
+}
+
 void task_quiz(void * params){
-	static uint32_t item;
-	static uint32_t genCar = 0;
+	uint32_t item = 0;
+	uint8_t nTlane, nBlane, TEMPlane;
 	for(;;){
 		xSemaphoreTake(taskQuiz_sem,portMAX_DELAY);
 		xSemaphoreTake(stateMutex, portMAX_DELAY);
 		xSemaphoreTake(myMutex, portMAX_DELAY);
-		if(  Tlane[0]== MCAR_NULL || Tlane[0]== MCAR_OCAR 
-			 ||Tlane[0]== NULL_MCAR || Tlane[0]== OCAR_MCAR){
-			if      ((Tlane[0]== MCAR_OCAR || Tlane[0]== MCAR_NULL) && Tlane[1]== OCAR_NULL){// END GAME
-				Tlane[0] = MCAR_NULL;      mygame.state = END;
-			}else if((Tlane[0]== MCAR_OCAR || Tlane[0]== MCAR_NULL) && Tlane[1]== OCAR_OCAR){// END GAME
-				Tlane[0] = MCAR_OCAR;      mygame.state = END;
-			}else if((Tlane[0]== NULL_MCAR || Tlane[0]== OCAR_MCAR) && Tlane[1]== OCAR_OCAR){// END GAME
-				Tlane[0] = OCAR_MCAR;      mygame.state = END;
-			}else if((Tlane[0]== NULL_MCAR || Tlane[0]== OCAR_MCAR) && Tlane[1]== NULL_OCAR){// END GAME
-				Tlane[0] = NULL_MCAR;      mygame.state = END;
-			}else if(Tlane[0]== MCAR_NULL && (Tlane[1]== NULL_OCAR)){
-				Tlane[0] = MCAR_OCAR; 
-			}else if(Tlane[0]== MCAR_OCAR && (Tlane[1]== NULL_NULL)){
-				Tlane[0] = MCAR_NULL; 
-			}else if(Tlane[0]== NULL_MCAR && (Tlane[1]== OCAR_NULL)){
-				Tlane[0] = OCAR_MCAR; 
-			}else if(Tlane[0]== OCAR_MCAR && (Tlane[1]== NULL_NULL)){
-				Tlane[0] = NULL_MCAR; 
-			}
-			Blane[0] = Blane[1];
-		}else{
-			if      ((Blane[0]== MCAR_NULL || Blane[0]== MCAR_OCAR) && Blane[1]== OCAR_NULL){// END GAME
-				Blane[0] = MCAR_NULL;      mygame.state = END;
-			}else if((Blane[0]== MCAR_NULL || Blane[0]== MCAR_OCAR) && Blane[1]== OCAR_OCAR){// END GAME
-				Blane[0] = MCAR_OCAR;      mygame.state = END;
-			}else if((Blane[0]== NULL_MCAR || Blane[0]== OCAR_MCAR) && Blane[1]== NULL_OCAR){// END GAME
-				Blane[0] = NULL_MCAR;      mygame.state = END;
-			}else if((Blane[0]== NULL_MCAR || Blane[0]== OCAR_MCAR) && Blane[1]== OCAR_OCAR){// END GAME
-				Blane[0] = OCAR_MCAR;      mygame.state = END;
-			}else if(Blane[0]== MCAR_NULL && (Blane[1]== NULL_OCAR )){
-				Blane[0] = MCAR_OCAR; 
-			}else if(Blane[0]== MCAR_OCAR && (Blane[1]== NULL_NULL )){
-				Blane[0] = MCAR_NULL; 
-			}else if(Blane[0]== NULL_MCAR && (Blane[1]== OCAR_NULL)){
-				Blane[0] = OCAR_MCAR; 
-			}else if(Blane[0]== OCAR_MCAR && (Blane[1]== NULL_NULL)){
-				Blane[0] = NULL_MCAR; 
-			}
-			Tlane[0] = Tlane[1];
+		xSemaphoreTake(bottom_block_Mutex, portMAX_DELAY);
+		if(  allLane[0][1] == 2 || allLane[1][1] == 2 
+			|| allLane[2][1] == 2  ||allLane[3][1] == 2)
+		{mygame.state = END;}
+		if(mygame.state == END){ 
+			xTimerStop(quiz_timer_hd,0);
+			xTimerStop(bult_timer_hd,0);
 		}
-		if(mygame.state == END) xTimerStop(quiz_timer_hd,portMAX_DELAY);
-		for(int i=1;i<12;i++){
-			Tlane[i] = Tlane[i+1];
-			Blane[i] = Blane[i+1]; 
-		}
-		if(genCar == 0){ item = 15; genCar++;}
-		else{
-			if(rand()%10> 4){
-				mygame.score ++;
-				uint32_t _level = set_level(mygame.score);
-				if(mygame.level != _level){
-					mygame.level = _level;
-					xTimerChangePeriod(quiz_timer_hd,pdMS_TO_TICKS(set_period_level(mygame.level)),portMAX_DELAY);
-				}
-				item = rand()%14; // 1:0car; 4:1car; 6:2car; 4:3car; 1:4car-done => 16 case
-			}else item = 15;
-			genCar--;}
+		// gen new blocks
+		item = rand()%10; // 4:3block; 6:2block; => 10 case
+		uint8_t newCol[4];
+		newCol[0]=0; newCol[1]=0; newCol[2]=0; newCol[3]=0;
 		switch(item){	
-			case 0:  Tlane[12]= OCAR_NULL; Blane[12]= NULL_NULL; break;
-			case 1:  Tlane[12]= NULL_OCAR; Blane[12]= NULL_NULL; break;
-			case 2:  Tlane[12]= NULL_NULL; Blane[12]= OCAR_NULL; break;
-			case 3:  Tlane[12]= NULL_NULL; Blane[12]= NULL_OCAR; break;
-			case 4:  Tlane[12]= OCAR_OCAR; Blane[12]= NULL_NULL; break;
-			case 5:  Tlane[12]= OCAR_NULL; Blane[12]= OCAR_NULL; break;
-			case 6:  Tlane[12]= OCAR_NULL; Blane[12]= NULL_OCAR; break;
-			case 7:  Tlane[12]= NULL_OCAR; Blane[12]= OCAR_NULL; break;
-			case 8:  Tlane[12]= NULL_OCAR; Blane[12]= NULL_OCAR; break;
-			case 9:  Tlane[12]= NULL_NULL; Blane[12]= OCAR_OCAR; break;
-			case 10: Tlane[12]= NULL_OCAR; Blane[12]= OCAR_OCAR; break;
-			case 11: Tlane[12]= OCAR_NULL; Blane[12]= OCAR_OCAR; break;
-			case 12: Tlane[12]= OCAR_OCAR; Blane[12]= NULL_OCAR; break;
-			case 13: Tlane[12]= OCAR_OCAR; Blane[12]= OCAR_NULL; break;
-			case 14: Tlane[12]= OCAR_OCAR; Blane[12]= OCAR_OCAR; break;
-			case 15: Tlane[12]= NULL_NULL; Blane[12]= NULL_NULL; break;
+			case 0:  newCol[1]=2; newCol[2]=2; newCol[3]=2; break;
+			case 1:  newCol[0]=2; newCol[2]=2; newCol[3]=2; break;
+			case 2:  newCol[0]=2; newCol[1]=2; newCol[3]=2; break;
+			case 3:  newCol[0]=2; newCol[1]=2; newCol[2]=2; break;
+			case 4:  newCol[0]=2; newCol[1]=2; break;
+			case 5:  newCol[0]=2; newCol[2]=2; break;
+			case 6:  newCol[0]=2; newCol[3]=2; break;
+			case 7:  newCol[1]=2; newCol[2]=2; break;
+			case 8:  newCol[1]=2; newCol[3]=2; break;
+			case 9:  newCol[2]=2; newCol[3]=2; break;
+
+		}	
+		for(int i=0; i<4; i++){
+			for(int j=12;j>0;j--){
+				uint8_t temp = allLane[i][j];
+				allLane[i][j] = newCol[i];
+				if(temp == 1 && newCol[i] == 2)
+					newCol[i] = 2;
+				else
+					newCol[i] = temp;
+			}
 		}
+		gamemap_translator();
+		xSemaphoreGive(bottom_block_Mutex);
 		xSemaphoreGive(myMutex);
 		xSemaphoreGive(stateMutex);
 		xSemaphoreGive(taskLCD_sem);
@@ -202,14 +279,16 @@ void task_quiz(void * params){
 }
 
 void task_lcd(void* params){
-	CLCD_I2C_CreateChar(&LCD1, MCAR_NULL, Tmycar_Bempty);
-	CLCD_I2C_CreateChar(&LCD1, NULL_MCAR, Tempty_Bmycar);
-	CLCD_I2C_CreateChar(&LCD1, MCAR_OCAR, Tmycar_Bcar);
-	CLCD_I2C_CreateChar(&LCD1, OCAR_MCAR, Tcar_Bmycar);
-	CLCD_I2C_CreateChar(&LCD1, OCAR_NULL, Tcar_Bempty);
-	CLCD_I2C_CreateChar(&LCD1, NULL_OCAR, Tempty_Bcar);
-	CLCD_I2C_CreateChar(&LCD1, OCAR_OCAR, Tcar_Bcar);
-	CLCD_I2C_CreateChar(&LCD1, NULL_NULL, Tempty_Bempty);
+	CLCD_I2C_CreateChar(&LCD1, u__, Tmycar_Bempty);
+	CLCD_I2C_CreateChar(&LCD1, __u, Tempty_Bmycar);
+	CLCD_I2C_CreateChar(&LCD1, o_o, Tbrick_Bbrick);
+	CLCD_I2C_CreateChar(&LCD1, o_b, Tbrick_Bullet);
+	CLCD_I2C_CreateChar(&LCD1, b_o, Bullet_Bbrick);
+	CLCD_I2C_CreateChar(&LCD1, __b, Tempty_Bullet);
+	CLCD_I2C_CreateChar(&LCD1, b__, Bullet_Bempty);
+	CLCD_I2C_CreateChar(&LCD1, bbb, Bwalls_Bwalls);
+	//								 #define o__  0xDF
+	//								 #define __o  0xA1
 	uint32_t _level, _score; 
 	gameSTATE _state;
 	for(;;)
@@ -230,8 +309,8 @@ void task_lcd(void* params){
 			CLCD_I2C_Clear(&LCD1);
 			CLCD_I2C_SetCursor(&LCD1, 0,0);
 			CLCD_I2C_WriteString(&LCD1,"      END");
+			sprintf(lcd_text, "    score: %d", _score);
 			CLCD_I2C_SetCursor(&LCD1, 0,1);
-			sprintf(lcd_text, "   score: %d", _score);
 			CLCD_I2C_WriteString(&LCD1,lcd_text);
 		}else if(_state == PLAYING){
 			CLCD_I2C_SetCursor(&LCD1, 0,0);
@@ -259,30 +338,24 @@ void task_button(void * params){
 		xQueueReceive(qbutton_hd, &btn, portMAX_DELAY);
 		xSemaphoreTake(myMutex, portMAX_DELAY);
 		if (btn == 0){
-				if     (Tlane[0]== NULL_MCAR)  {Tlane[0]= MCAR_NULL;}
-				else if(Blane[0]== MCAR_NULL && Tlane[0]==OCAR_NULL)
-													             {Tlane[0]= OCAR_MCAR; Blane[0]= NULL_NULL;}
-				else if(Blane[0]== MCAR_NULL && Tlane[0]==NULL_NULL)
-                                       {Tlane[0]= NULL_MCAR; Blane[0]= NULL_NULL;}
-				else if(Blane[0]== MCAR_OCAR && Tlane[0]==OCAR_NULL)
-													             {Tlane[0]= OCAR_MCAR; Blane[0]= NULL_OCAR;}
-				else if(Blane[0]== MCAR_OCAR && Tlane[0]==NULL_NULL)
-                                       {Tlane[0]= NULL_MCAR; Blane[0]= NULL_OCAR;}
-				else if(Blane[0]== NULL_MCAR)  {Blane[0]=MCAR_NULL;}
+				if     (Tlane[0]== __u)  {Tlane[0]= u__; allLane[0][0] = 3; allLane[1][0] = 0;}
+				else if(Blane[0]== u__ && Tlane[0]==0x20)
+                                 {Tlane[0]= __u; Blane[0]= 0x20;
+																  allLane[1][0] = 3; allLane[2][0] = 0;}
+				else if(Blane[0]== __u)  {Blane[0]= u__; allLane[2][0] = 3; allLane[3][0] = 0;}
 		}
 		if (btn == 1){
-				if     (Tlane[0]== MCAR_NULL)  {Tlane[0]= NULL_MCAR;}
-				else if(Tlane[0]== NULL_MCAR && Blane[0]== NULL_OCAR)
-													             {Tlane[0]= NULL_NULL; Blane[0]= MCAR_OCAR;}
-				else if(Tlane[0]== NULL_MCAR && Blane[0]== NULL_NULL)
-                                       {Tlane[0]= NULL_NULL; Blane[0]= MCAR_NULL;}
-				else if(Tlane[0]== OCAR_MCAR && Blane[0]== NULL_OCAR)
-													             {Tlane[0]= OCAR_NULL; Blane[0]= MCAR_OCAR;}
-				else if(Tlane[0]== OCAR_MCAR && Blane[0]== NULL_NULL)
-                                       {Tlane[0]= OCAR_NULL; Blane[0]= MCAR_NULL;}
-				else if(Blane[0]== MCAR_NULL)  {Blane[0]= NULL_MCAR;}
+				if     (Tlane[0]== u__)  {Tlane[0]= __u; allLane[0][0] = 0; allLane[1][0] = 3;}
+				else if(Tlane[0]== __u && Blane[0]==0x20)
+                                 {Tlane[0]= 0x20; Blane[0]= u__;
+																  allLane[1][0] = 0; allLane[2][0] = 3;}
+				else if(Blane[0]== u__)  {Blane[0]= __u; allLane[2][0] = 0; allLane[3][0] = 3;}
 		}
 		if (btn == 2){
+				if     (Tlane[0]== u__){Tlane[1] = b__; allLane[0][1] = 1;}
+				else if(Tlane[0]== __u){Tlane[1] = __b; allLane[1][1] = 1;}
+				else if(Blane[0]== u__){Blane[1] = b__; allLane[2][1] = 1;}
+				else if(Blane[0]== __u){Blane[1] = __b; allLane[3][1] = 1;}
 		}
 		xSemaphoreGive(myMutex);
 		xSemaphoreGive(taskLCD_sem);
